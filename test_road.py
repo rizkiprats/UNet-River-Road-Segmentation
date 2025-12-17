@@ -6,46 +6,36 @@ import torch
 import os
 
 if __name__ == "__main__":
-    input_folder = "Road_Geojson"
-    output_dir = "Road_tiff_dataset"
+    input_folder = "geotiff_geojson_train_datasets/road_dataset"
+    output_dir = "road_dataset"
     is_augmented = True
-    num_augmented = 25
+    num_augmented = 10
     
-    # batch_generate_datasets_from_geojson_tif(
-    #     input_folder, 
-    #     output_dir, 
-    #     target_crs="EPSG:4326", 
-    #     train_ratio=0.7, 
-    #     val_ratio=0.2, 
-    #     test_ratio=0.1, 
-    #     dataset_name='dataset', 
-    #     augmented=is_augmented, 
-    #     num_augmented=num_augmented
-    # )
+    batch_generate_datasets_from_geojson_tif(
+        input_folder, 
+        output_dir, 
+        target_crs="EPSG:4326", 
+        train_ratio=0.7, 
+        val_ratio=0.3, 
+        test_ratio=0, 
+        dataset_name='dataset', 
+        augmented=is_augmented, 
+        num_augmented=num_augmented
+    )
 
     save_dir = "RoadModel"
     os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, "unet_road_segmentation.pth")
+    save_path = os.path.join(save_dir, "best.pth")
     
-    # run_training(
-    #     dataset_dir=output_dir,
-    #     batch_size=8,
-    #     num_epochs=100,
-    #     lr=1e-4,
-    #     save_path=save_path,
-    #     patience=10
-    # )
-
-    # run_training(
-    #     dataset_dir=output_dir,
-    #     batch_size=8,
-    #     num_epochs=100,
-    #     lr=0.0001,
-    #     save_path=save_path,
-    #     resume_mode="resume",
-    #     resume_path=save_path,
-    #     patience=10
-    # )
+    run_training(
+        dataset_dir=output_dir,
+        batch_size=8,
+        img_resize=512,
+        num_epochs=100,
+        lr=1e-4,
+        save_path=save_path,
+        patience=50
+    )
 
     # Load model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -54,7 +44,6 @@ if __name__ == "__main__":
     model.to(device)
     
     test_predict_dir = "Test Image"
-    test_file = "Building Sawit (1).tif"
 
     for file in os.listdir(test_predict_dir):
         if "predicted_mask" not in file and file.endswith((".tif", ".png", ".jpg", ".jpeg", ".tiff")):
@@ -63,7 +52,9 @@ if __name__ == "__main__":
             predicted_mask = predict(
                 model,
                 image_path=os.path.join(test_predict_dir, file), 
-                device=device, 
+                device=device,
+                img_resize=512, 
                 save_path=os.path.join(test_predict_dir, f"{file}_predicted_mask.png"),
-                show_visualization=False
+                show_visualization=False,
+                save_visualization=True
             )

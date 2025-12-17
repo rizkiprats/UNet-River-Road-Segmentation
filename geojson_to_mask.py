@@ -31,6 +31,51 @@ def reproject_raster(input_tif, output_tif, target_crs="EPSG:4326"):
                     dst_crs=target_crs,
                     resampling=Resampling.nearest)
                 
+def compress_raster(input_tif, output_tif, compression="lzw", dtype=None, quality=None):
+    """
+    Kompres file raster agar ukuran lebih kecil.
+    
+    Parameters:
+    -----------
+    input_tif : str
+        Path file raster input (.tif)
+    output_tif : str
+        Path file raster output (.tif) hasil kompresi
+    compression : str
+        Metode kompresi (pilihan: "lzw", "deflate", "zstd", "jpeg")
+    dtype : numpy dtype (optional)
+        Jika ingin mengubah tipe data (misal float32 -> uint8)
+    quality : int (optional)
+        Hanya untuk compression="jpeg" (range 1-100)
+    """
+    import rasterio
+
+    with rasterio.open(input_tif) as src:
+        meta = src.meta.copy()
+
+        # Ubah dtype jika diperlukan
+        if dtype is not None:
+            meta["dtype"] = dtype
+
+        # Set kompresi
+        meta.update({
+            "compress": compression,
+            "driver": "GTiff"
+        })
+
+        # Tambahkan quality jika JPEG
+        if compression.lower() == "jpeg" and quality is not None:
+            meta.update({"jpeg_quality": quality})
+
+        with rasterio.open(output_tif, "w", **meta) as dst:
+            for i in range(1, src.count + 1):
+                data = src.read(i)
+                if dtype is not None:
+                    data = data.astype(dtype)
+                dst.write(data, i)
+
+    print(f"✅ Raster dikompres dan disimpan di {output_tif}")
+                
 def convert_geojson_to_mask_geopandas(geojson_path, geotiff_path, output_file):
     import rasterio
     from rasterio.features import rasterize
@@ -119,12 +164,15 @@ def save_images_and_labels_from_geojson(image_path, geojson_path, output_dir, in
     
     convert_geojson_to_mask_geopandas(geojson_path, image_path, output_file_labels)
     
-    # Salin gambar ke directory images
-    shutil.copy2(image_path, os.path.join(output_dir_images, f"{base_name}{extension}"))
-    print(f"Copied image: {image_path}")
-
+    image_path_compress = os.path.join(os.path.dirname(image_path), f"{base_name}_compress{extension}")
+    
+    compress_raster(image_path, image_path_compress, compression="deflate")
     os.remove(image_path)
-    print(f"Removed Copied image: {image_path}")
+    print(f"Removed Compressed image: {image_path}")
+    
+    # Salin gambar ke directory images
+    shutil.move(image_path_compress, os.path.join(output_dir_images, f"{base_name}{extension}"))
+    print(f"Moved image: {image_path_compress}")    
 
 def get_random_images_and_mask(image_dir, label_dir):
     random_img_file = random.choice(list(image_dir.glob('*')))
@@ -149,12 +197,12 @@ def augment_dataset(image_dir, label_dir, output_dir, augment_count):
     
     # # Define augmentation pipeline    
     transform = A.Compose([
-        # A.RandomRotate90(p=0.5),
-        # A.HorizontalFlip(p=0.5),
-        # A.VerticalFlip(p=0.3),
-        # A.Blur(p=0.3),
-        # A.RandomScale(scale_limit=0.2, p=0.5),
-        # A.MotionBlur(p=0.2),  # Motion blur
+        A.RandomRotate90(p=0.5),
+        A.HorizontalFlip(p=0.5),
+        A.VerticalFlip(p=0.3),
+        A.Blur(p=0.3),
+        A.RandomScale(scale_limit=0.2, p=0.5),
+        A.MotionBlur(p=0.2),  # Motion blur
         # A.RandomBrightnessContrast(p=0.5),
         # A.HueSaturationValue(p=0.5),
         # A.CLAHE(p=0.3),  # Contrast Limited Adaptive Histogram Equalization
@@ -162,7 +210,7 @@ def augment_dataset(image_dir, label_dir, output_dir, augment_count):
         # A.GaussNoise(std_range=(0.2, 0.44), p=0.3),  # Gaussian noise
         # A.RGBShift(r_shift_limit=10, g_shift_limit=10, b_shift_limit=10, p=0.2),  # RGB channel shift
         # A.ToGray(p=0.1),  # Convert to grayscale,
-        # A.Affine(shear=(-15, 15), p=0.3),  # Shear transformation
+        A.Affine(shear=(-15, 15), p=0.3),  # Shear transformation
         A.Mosaic(
             grid_yx=(2, 2),
             target_size=(256, 256),
@@ -194,6 +242,7 @@ def augment_dataset(image_dir, label_dir, output_dir, augment_count):
                 random_image1, random_mask1 = get_random_images_and_mask(image_dir, label_dir)
                 random_image2, random_mask2 = get_random_images_and_mask(image_dir, label_dir)
                 random_image3, random_mask3 = get_random_images_and_mask(image_dir, label_dir)
+                random_image4, random_mask4 = get_random_images_and_mask(image_dir, label_dir)
                 
                 mosaic_metadata = [
                     {
@@ -207,7 +256,11 @@ def augment_dataset(image_dir, label_dir, output_dir, augment_count):
                     {
                         "image": random_image3,
                         "mask": random_mask3,
-                    }
+                    },
+                    {
+                        "image": random_image4,
+                        "mask": random_mask4,
+                    },
                 ]
 
                 for i in range(augment_count):
@@ -225,7 +278,7 @@ def augment_dataset(image_dir, label_dir, output_dir, augment_count):
 
                     print (f"Finished augmentation image and mask for {img_file.name} - augment count {i+1}/{augment_count}")
     
-def split_dataset(output_dir, train_ratio=0.7, val_ratio=0.2, test_ratio=0.1, seed=42):
+def split_dataset(output_dir, train_ratio=0.7, val_ratio=0.2, test_ratio=0.1, seed=42, num_augmented=0, is_augmented=False):
     """
     Membagi dataset menjadi train, validation, dan test set
     
@@ -292,6 +345,13 @@ def split_dataset(output_dir, train_ratio=0.7, val_ratio=0.2, test_ratio=0.1, se
     copy_files(val_files, val_dir)
     copy_files(test_files, test_dir)
     
+    
+    # Augmentasi hanya untuk data train
+    if is_augmented:
+        train_images_dir = os.path.join(train_dir,'images')
+        train_labels_dir = os.path.join(train_dir,'labels')
+        augment_dataset(image_dir=train_images_dir, label_dir=train_labels_dir, output_dir=train_dir, augment_count=num_augmented)
+    
     # Print statistik
     print(f"\nDataset split complete:")
     print(f"Total files: {n_files}")
@@ -341,221 +401,6 @@ def batch_generate_datasets_from_geojson_tif(input_folder, output_dir, target_cr
     if augmented == True:
         augment_dataset(image_dir=images_dir, label_dir=labels_dir, output_dir=output_dir, augment_count=num_augmented)
         
-    split_dataset(output_dir, train_ratio=train_ratio, val_ratio=val_ratio, test_ratio=test_ratio)
-    
-    shutil.rmtree(images_dir)
-    shutil.rmtree(labels_dir)
+    split_dataset(output_dir, train_ratio=train_ratio, val_ratio=val_ratio, test_ratio=test_ratio, is_augmented=False, num_augmented=num_augmented)
     
     return output_dir
-
- 
-def copy_tiff_geojson_to_collected(results_folder, class_name, tif_path, geojson_path, created_at):        
-    import shutil
-    
-    #===========================Dataset Untuk Dikumpulkan================================
-    result_reuse = os.path.join(results_folder, "smp_collected_datasets")
-    os.makedirs(result_reuse, exist_ok=True)
-
-    result_reuse_detection = os.path.join(result_reuse, class_name)
-    os.makedirs(result_reuse_detection, exist_ok=True)
-    
-    extension_tif = os.path.splitext(tif_path)[1].lower()
-    # basename_temp_geojson = os.path.splitext(os.path.basename(geojson_path))[0]+f"_{class_name}_{datetime.now().strftime('%Y%m%d')}"
-    basename_temp_geojson = os.path.splitext(os.path.basename(geojson_path))[0]+f"_{class_name}_{created_at}"
-    geojson_file_reuse = os.path.join(result_reuse_detection, f"{basename_temp_geojson}.geojson")
-    shutil.copy2(geojson_path, geojson_file_reuse)
-    print(f"Copied GeoJSON: {geojson_path} to folder {result_reuse_detection}")
-    shutil.copy2(tif_path, os.path.join(result_reuse_detection, f"{basename_temp_geojson}{extension_tif}"))
-    print(f"Copied image: {tif_path} to folder {result_reuse_detection}")
-
-    return result_reuse
-
-def copy_tiff_geojson_to_train(results_folder, class_name, tif_path, geojson_path, project_id, created_at, is_custom_class=False, is_add_class=False, custom_class=None, used_class=None, remove_exist_path=True):        
-    import shutil
-
-    #===========================Mengumpulkan Dataset Dari Geojson===============================
-    collected_geojson_dataset_dir = copy_tiff_geojson_to_collected(
-        results_folder=results_folder,
-        class_name=class_name,
-        tif_path=tif_path,
-        geojson_path=geojson_path,
-        created_at=created_at
-    )
-
-    #===========================Dataset Yang Akan Dipakai Training================================
-    result_reuse_used_train = os.path.join(results_folder, "smp_train_datasets")
-    if(remove_exist_path == True):
-        if os.path.exists(result_reuse_used_train):
-        # Hapus output directory jika sudah ada
-            shutil.rmtree(result_reuse_used_train)
-    
-    result_reuse_used_train = os.path.join(result_reuse_used_train, str(project_id))
-    os.makedirs(result_reuse_used_train, exist_ok=True)
-
-    if is_custom_class == True and custom_class is not None and used_class is not None:
-        for class_name in custom_class:
-            # Buat file classes.txt
-            if not os.path.exists(os.path.join(result_reuse_used_train, 'classes.txt')):
-                with open(os.path.join(result_reuse_used_train, 'classes.txt'), 'w') as f:
-                    f.write(f"{class_name}\n")
-            else:
-                with open(os.path.join(result_reuse_used_train, 'classes.txt'), 'r') as f:
-                    existing_classes = set(line.strip() for line in f)
-
-                with open(os.path.join(result_reuse_used_train, 'classes.txt'), 'a') as f:
-                    if class_name not in existing_classes:
-                        f.write(f"{class_name}\n")
-                        
-        result_reuse_detection = os.path.join(result_reuse_used_train, used_class)
-        os.makedirs(result_reuse_detection, exist_ok=True)
-        
-        extension_tif = os.path.splitext(tif_path)[1].lower()
-        # basename_temp_geojson = os.path.splitext(os.path.basename(geojson_path))[0]+f"_{used_class}_{datetime.now().strftime('%Y%m%d')}"
-        basename_temp_geojson = os.path.splitext(os.path.basename(geojson_path))[0]+f"_{used_class}_{created_at}"
-        geojson_file_reuse = os.path.join(result_reuse_detection, f"{basename_temp_geojson}.geojson")
-        shutil.copy2(geojson_path, geojson_file_reuse)
-        print(f"Copied GeoJSON: {geojson_path} to folder {result_reuse_detection}")
-        shutil.copy2(tif_path, os.path.join(result_reuse_detection, f"{basename_temp_geojson}{extension_tif}"))
-        print(f"Copied image: {tif_path} to folder {result_reuse_detection}")
-        
-        #============================Salin Dataset dengan Class sama dari Collected Dataset==========================
-        for class_name in custom_class:
-            used_class = class_name
-            result_reuse_detection = os.path.join(result_reuse_used_train, used_class)
-            os.makedirs(result_reuse_detection, exist_ok=True)
-            if os.path.exists(os.path.join(collected_geojson_dataset_dir, used_class)):
-                print("Collected dataset found Class: ", used_class)
-                try:
-                    dataset_collected_dir = os.path.join(collected_geojson_dataset_dir, used_class)
-                    image_files = [f for f in os.listdir(dataset_collected_dir) if f.endswith(('.jpg', '.jpeg', '.png', '.tiff', '.tif'))]
-                    
-                    for img_file in image_files:
-                        shutil.copy2(
-                            os.path.join(dataset_collected_dir, img_file),
-                            os.path.join(result_reuse_detection, img_file)
-                        )
-                        
-                        # Salin file geojson
-                        base_name = os.path.splitext(img_file)[0]
-                        geojson_file = f"{base_name}.geojson"
-                        if os.path.exists(os.path.join(dataset_collected_dir, geojson_file)):
-                            shutil.copy2(
-                                os.path.join(dataset_collected_dir, geojson_file),
-                                os.path.join(result_reuse_detection, geojson_file)
-                            )
-                    print(f"Berhasil menyalin dataset dari collected dataset")
-                except Exception as e:
-                    print(f"Gagal menyalin dataset dari collected dataset: {str(e)}")
-    elif is_add_class == True and custom_class is not None and used_class is not None:
-        for class_name in custom_class:
-            # Buat file classes.txt
-            if not os.path.exists(os.path.join(result_reuse_used_train, 'classes.txt')):
-                with open(os.path.join(result_reuse_used_train, 'classes.txt'), 'w') as f:
-                    f.write(f"{class_name}\n")
-            else:
-                with open(os.path.join(result_reuse_used_train, 'classes.txt'), 'r') as f:
-                    existing_classes = set(line.strip() for line in f)
-
-                with open(os.path.join(result_reuse_used_train, 'classes.txt'), 'a') as f:
-                    if class_name not in existing_classes:
-                        f.write(f"{class_name}\n")
-                        
-        with open(os.path.join(result_reuse_used_train, 'classes.txt'), 'r') as f:
-            existing_classes = set(line.strip() for line in f)
-            
-        with open(os.path.join(result_reuse_used_train, 'classes.txt'), 'a') as f:
-            if used_class not in existing_classes:
-                f.write(f"{used_class}\n")
-        
-        result_reuse_detection = os.path.join(result_reuse_used_train, used_class)
-        os.makedirs(result_reuse_detection, exist_ok=True)
-        
-        extension_tif = os.path.splitext(tif_path)[1].lower()
-        # basename_temp_geojson = os.path.splitext(os.path.basename(geojson_path))[0]+f"_{used_class}_{datetime.now().strftime('%Y%m%d')}"
-        basename_temp_geojson = os.path.splitext(os.path.basename(geojson_path))[0]+f"_{used_class}_{created_at}"
-        geojson_file_reuse = os.path.join(result_reuse_detection, f"{basename_temp_geojson}.geojson")
-        shutil.copy2(geojson_path, geojson_file_reuse)
-        print(f"Copied GeoJSON: {geojson_path} to folder {result_reuse_detection}")
-        shutil.copy2(tif_path, os.path.join(result_reuse_detection, f"{basename_temp_geojson}{extension_tif}"))
-        print(f"Copied image: {tif_path} to folder {result_reuse_detection}")
-        
-        #============================Salin Dataset dengan Class sama dari Collected Dataset==========================
-        if used_class not in custom_class:
-            custom_class.append(used_class)
-        for class_name in custom_class:
-                used_class = class_name
-                result_reuse_detection = os.path.join(result_reuse_used_train, used_class)
-                os.makedirs(result_reuse_detection, exist_ok=True)
-                if os.path.exists(os.path.join(collected_geojson_dataset_dir, used_class)):
-                    print("Collected dataset found Class: ", used_class)
-                    try:
-                        dataset_collected_dir = os.path.join(collected_geojson_dataset_dir, used_class)
-                        image_files = [f for f in os.listdir(dataset_collected_dir) if f.endswith(('.jpg', '.jpeg', '.png', '.tiff', '.tif'))]
-                        
-                        for img_file in image_files:
-                            shutil.copy2(
-                                os.path.join(dataset_collected_dir, img_file),
-                                os.path.join(result_reuse_detection, img_file)
-                            )
-                            
-                            # Salin file geojson
-                            base_name = os.path.splitext(img_file)[0]
-                            geojson_file = f"{base_name}.geojson"
-                            if os.path.exists(os.path.join(dataset_collected_dir, geojson_file)):
-                                shutil.copy2(
-                                    os.path.join(dataset_collected_dir, geojson_file),
-                                    os.path.join(result_reuse_detection, geojson_file)
-                                )
-                        print(f"Berhasil menyalin dataset dari collected dataset")
-                    except Exception as e:
-                        print(f"Gagal menyalin dataset dari collected dataset: {str(e)}")
-    else:
-        # Buat file classes.txt
-        if not os.path.exists(os.path.join(result_reuse_used_train, 'classes.txt')):
-            with open(os.path.join(result_reuse_used_train, 'classes.txt'), 'w') as f:
-                f.write(f"{class_name}\n")
-        else:
-            with open(os.path.join(result_reuse_used_train, 'classes.txt'), 'r') as f:
-                existing_classes = set(line.strip() for line in f)
-
-            with open(os.path.join(result_reuse_used_train, 'classes.txt'), 'a') as f:
-                if class_name not in existing_classes:
-                    f.write(f"{class_name}\n")
-
-        result_reuse_detection = os.path.join(result_reuse_used_train, class_name)
-        os.makedirs(result_reuse_detection, exist_ok=True)
-        
-        extension_tif = os.path.splitext(tif_path)[1].lower()
-        # basename_temp_geojson = os.path.splitext(os.path.basename(geojson_path))[0]+f"_{class_name}_{datetime.now().strftime('%Y%m%d')}"
-        basename_temp_geojson = os.path.splitext(os.path.basename(geojson_path))[0]+f"_{class_name}_{created_at}"
-        geojson_file_reuse = os.path.join(result_reuse_detection, f"{basename_temp_geojson}.geojson")
-        shutil.copy2(geojson_path, geojson_file_reuse)
-        print(f"Copied GeoJSON: {geojson_path} to folder {result_reuse_detection}")
-        shutil.copy2(tif_path, os.path.join(result_reuse_detection, f"{basename_temp_geojson}{extension_tif}"))
-        print(f"Copied image: {tif_path} to folder {result_reuse_detection}")
-        
-        #============================Salin Dataset dengan Class sama dari Collected Dataset==========================
-        if os.path.exists(os.path.join(collected_geojson_dataset_dir, class_name)):
-            try:
-                dataset_collected_dir = os.path.join(collected_geojson_dataset_dir, class_name)
-                image_files = [f for f in os.listdir(dataset_collected_dir) if f.endswith(('.jpg', '.jpeg', '.png', '.tiff', '.tif'))]
-                
-                for img_file in image_files:
-                    shutil.copy2(
-                        os.path.join(dataset_collected_dir, img_file),
-                        os.path.join(result_reuse_detection, img_file)
-                    )
-                    
-                    # Salin file geojson
-                    base_name = os.path.splitext(img_file)[0]
-                    geojson_file = f"{base_name}.geojson"
-                    if os.path.exists(os.path.join(dataset_collected_dir, geojson_file)):
-                        shutil.copy2(
-                            os.path.join(dataset_collected_dir, geojson_file),
-                            os.path.join(result_reuse_detection, geojson_file)
-                        )
-                print(f"Berhasil menyalin dataset dari collected dataset")
-            except Exception as e:
-                print(f"Gagal menyalin dataset dari collected dataset: {str(e)}")
-
-    return result_reuse_used_train
