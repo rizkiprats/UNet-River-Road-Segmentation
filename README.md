@@ -1,5 +1,7 @@
 # UNet River & Road Segmentation
 
+![alt text](image.png)
+
 A compact pipeline for semantic segmentation of rivers and roads from geo-referenced imagery using a UNet-style model. The repository includes tools to convert vector annotations (GeoJSON or AnyLabel) to raster masks, dataset loading utilities, training and inference scripts, and example datasets.
 
 **Features**
