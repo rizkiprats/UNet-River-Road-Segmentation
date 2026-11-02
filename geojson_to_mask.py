@@ -74,7 +74,7 @@ def compress_raster(input_tif, output_tif, compression="lzw", dtype=None, qualit
                     data = data.astype(dtype)
                 dst.write(data, i)
 
-    print(f"✅ Raster dikompres dan disimpan di {output_tif}")
+    print(f"Raster dikompres dan disimpan di {output_tif}")
                 
 def convert_geojson_to_mask_geopandas(geojson_path, geotiff_path, output_file):
     import rasterio
@@ -90,7 +90,6 @@ def convert_geojson_to_mask_geopandas(geojson_path, geotiff_path, output_file):
 
         print(f"Raster CRS: {raster_crs}")
 
-    # gdf = gpd.read_file(geojson_path) #<- error fiona
     # Buka GeoJSON dengan Fiona
     with fiona.open(geojson_path, 'r') as src:
         # Konversi ke GeoDataFrame manual
@@ -103,7 +102,7 @@ def convert_geojson_to_mask_geopandas(geojson_path, geotiff_path, output_file):
     # print(f"GeoJSON CRS: {gdf.crs}")
 
     if gdf.crs is None:
-        print("⚠️ CRS GeoJSON tidak ada. Menetapkan EPSG:4326 sebagai default.")
+        print("CRS GeoJSON tidak ada. Menetapkan EPSG:4326 sebagai default.")
         gdf.set_crs("EPSG:4326", inplace=True)
 
     if raster_crs is None:
@@ -111,7 +110,7 @@ def convert_geojson_to_mask_geopandas(geojson_path, geotiff_path, output_file):
     
     # Tambahkan ini untuk mengatasi CRS lokal
     if not raster_crs.to_epsg():
-        print("⚠️ CRS raster tidak standar. Menggunakan EPSG:3857 sebagai fallback.")
+        print("CRS raster tidak standar. Menggunakan EPSG:3857 sebagai fallback.")
         raster_crs = "EPSG:3857"
         
     # Ubah ke CRS raster agar koordinat cocok dengan ukuran gambar
@@ -143,7 +142,7 @@ def convert_geojson_to_mask_geopandas(geojson_path, geotiff_path, output_file):
     ) as dst:
         dst.write(mask_visual, 1)
 
-    print(f"✅ Mask berhasil disimpan ke {output_file}")
+    print(f"Mask berhasil disimpan ke {output_file}")
 
             
 def save_images_and_labels_from_geojson(image_path, geojson_path, output_dir, index_class):
@@ -203,13 +202,6 @@ def augment_dataset(image_dir, label_dir, output_dir, augment_count):
         A.Blur(p=0.3),
         A.RandomScale(scale_limit=0.2, p=0.5),
         A.MotionBlur(p=0.2),  # Motion blur
-        # A.RandomBrightnessContrast(p=0.5),
-        # A.HueSaturationValue(p=0.5),
-        # A.CLAHE(p=0.3),  # Contrast Limited Adaptive Histogram Equalization
-        # A.RandomGamma(p=0.3),  # Random gamma correction
-        # A.GaussNoise(std_range=(0.2, 0.44), p=0.3),  # Gaussian noise
-        # A.RGBShift(r_shift_limit=10, g_shift_limit=10, b_shift_limit=10, p=0.2),  # RGB channel shift
-        # A.ToGray(p=0.1),  # Convert to grayscale,
         A.Affine(shear=(-15, 15), p=0.3),  # Shear transformation
         A.Mosaic(
             grid_yx=(2, 2),
