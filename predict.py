@@ -30,12 +30,8 @@ def predict(model, image_path, device, save_path=None, show_visualization=False,
         output = model(input_tensor)
         pred_mask = torch.sigmoid(output).cpu().numpy()[0, 0]  # 256x256
 
-    # Threshold
-    # pred_mask_bin = (pred_mask > threshold).astype(np.uint8) * 255
-
     # Resize probability mask dan mask biner ke ukuran asli
     pred_mask_resized = cv2.resize(pred_mask, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
-    # pred_mask_bin_resized = cv2.resize(pred_mask_bin, (orig_w, orig_h), interpolation=cv2.INTER_NEAREST) 
     
     # Threshold Ulang
     pred_mask_bin_resized = (pred_mask_resized > threshold).astype(np.uint8) * 255
@@ -50,7 +46,7 @@ def predict(model, image_path, device, save_path=None, show_visualization=False,
     # Simpan mask ke file
     if save_path:
         cv2.imwrite(save_path, pred_mask_bin_resized)
-        print(f"✅ Saved predicted mask to {save_path}")
+        print(f"Saved predicted mask to {save_path}")
 
     # Visualisasi hasil
     if show_visualization:
@@ -83,6 +79,6 @@ def predict(model, image_path, device, save_path=None, show_visualization=False,
         basename_save = os.path.splitext(save_path)[0]
         save_viz_path = f"{basename_save}_visualization_overlay{extension_save}"
         plt.savefig(save_viz_path)
-        print(f"✅ Saved visualization overlay to {save_viz_path}")
+        print(f"Saved visualization overlay to {save_viz_path}")
 
     return pred_mask_bin_resized
