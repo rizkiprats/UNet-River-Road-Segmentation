@@ -2,7 +2,7 @@
 
 ![alt text](image.png)
 
-A compact pipeline for semantic segmentation of rivers and roads from geo-referenced imagery using a UNet-style model. The repository includes tools to convert vector annotations (GeoJSON or AnyLabel) to raster masks, dataset loading utilities, training and inference scripts, and example datasets.
+A compact pipeline for semantic segmentation of rivers and roads from geo-referenced imagery using a UNet-style model. The repository includes tools to convert vector annotations (GeoJSON or AnyLabel) to raster masks, dataset loading utilities, training and inference scripts, and example datasets. In this pipeline model is using Unet Architecture from [Segmentation Models Pytorch](https://github.com/qubvel-org/segmentation_models.pytorch).
 
 **Features**
 - Convert GeoJSON and AnyLabel exports into segmentation masks.
