@@ -1,40 +1,28 @@
-from train import run_training, load_model_with_fallback
-from geojson_to_mask import batch_generate_datasets_from_geojson_tif
+from train import run_training_for_classes, load_model_with_fallback
 from model import get_model
 from predict import predict
 import torch
 import os
 
 if __name__ == "__main__":
-    input_folder = "geotiff_geojson_train_datasets/river_dataset"
-    output_dir = "river_dataset"
-    is_augmented = True
-    num_augmented = 2
-    
-    batch_generate_datasets_from_geojson_tif(
-        input_folder, 
-        output_dir, 
-        target_crs="EPSG:4326", 
-        train_ratio=0.7, 
-        val_ratio=0.3, 
-        test_ratio=0, 
-        dataset_name='dataset', 
-        augmented=is_augmented, 
-        num_augmented=num_augmented
-    )
-    
-    save_dir = "RiverModel"
-    os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, "best.pth")
+    dataset_root = r"Datasets/River_Road_Dataset"
 
-    run_training(
-        dataset_dir=output_dir,
-        batch_size=8,
-        num_epochs=100,
-        lr=1e-4,
-        save_path=save_path,
-        patience=10
-    )
+    train_model = True
+    save_dir = "Model/Singlelabel"
+    save_path = os.path.join(save_dir, "unet_river_river.pth")
+    
+    if train_model:
+        os.makedirs(save_dir, exist_ok=True)
+        model_paths = run_training_for_classes(
+            dataset_root=dataset_root,
+            class_names="river",
+            batch_size=8,
+            num_epochs=100,
+            lr=1e-4,
+            save_path=os.path.join(save_dir, "unet_river.pth"),
+            patience=10
+        )
+        save_path = model_paths["river"]
 
     # Load model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -42,7 +30,7 @@ if __name__ == "__main__":
     model = load_model_with_fallback(model, save_path, device)
     model.to(device)
 
-    test_predict_dir = "Test Image"
+    test_predict_dir = "Test Image/river_road"
     
     for file in os.listdir(test_predict_dir):
         if "predicted_mask" not in file and file.endswith((".tif", ".png", ".jpg", ".jpeg", ".tiff")):
@@ -52,7 +40,10 @@ if __name__ == "__main__":
                 model,
                 image_path=os.path.join(test_predict_dir, file), 
                 device=device, 
-                save_path=os.path.join(test_predict_dir, f"{file}_predicted_mask.png"),
+                save_path=os.path.join(
+                    test_predict_dir,
+                    f"{os.path.splitext(file)[0]}_predicted_mask.tif"
+                ),
                 show_visualization=False,
                 save_visualization=True,
             )
